@@ -1,0 +1,34 @@
+# cronwatch example configuration
+# Copy to config.yaml and adjust to your environment.
+
+# How often cronwatch checks job schedules for missed runs.
+check_interval: 1m
+
+# Path to the cronwatch log file. Leave empty to log to stdout.
+log_file: /var/log/cronwatch.log
+
+# Alerting destinations (at least one recommended).
+alerts:
+  # Send alert emails to this address (requires SMTP env vars).
+  email: ops@example.com
+  # POST alert payload to this webhook URL.
+  webhook: https://hooks.example.com/cronwatch
+
+# List of cron jobs to monitor.
+jobs:
+  - name: nightly-backup
+    # Standard cron expression: minute hour day month weekday
+    schedule: "0 2 * * *"
+    # Maximum allowed runtime before an alert is raised.
+    timeout: 30m
+    # Optional: command cronwatch can invoke to verify the job ran.
+    command: /usr/local/bin/backup.sh
+
+  - name: hourly-sync
+    schedule: "@hourly"
+    timeout: 5m
+    command: /usr/local/bin/sync.sh
+
+  - name: weekly-report
+    schedule: "0 9 * * 1"
+    timeout: 15m
