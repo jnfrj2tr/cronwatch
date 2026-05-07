@@ -75,6 +75,18 @@ func (m *Monitor) RecordHeartbeat(name string, at time.Time) {
 	}
 }
 
+// Status returns a copy of the current JobStatus for the named job.
+// The second return value is false if no job with that name is tracked.
+func (m *Monitor) Status(name string) (JobStatus, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.status[name]
+	if !ok {
+		return JobStatus{}, false
+	}
+	return *s, true
+}
+
 // check evaluates each job against its expected schedule.
 func (m *Monitor) check(now time.Time) {
 	m.mu.Lock()
