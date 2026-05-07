@@ -3,32 +3,28 @@ package api
 import (
 	"encoding/json"
 	"net/http"
-	"strings"
+	"time"
 
+	"github.com/user/cronwatch/internal/config"
 	"github.com/user/cronwatch/internal/monitor"
 )
 
 type annotationsHandler struct {
-	store   *monitor.AnnotationStore
-	knownJobs map[string]struct{}
+	cfg   *config.Config
+	store *monitor.AnnotationStore
 }
 
-func newAnnotationsHandler(store *monitor.AnnotationStore, jobs []string) *annotationsHandler {
-	m := make(map[string]struct{}, len(jobs))
-	for _, j := range jobs {
-		m[j] = struct{}{}
-	}
-	return &annotationsHandler{store: store, knownJobs: m}
+func newAnnotationsHandler(cfg *config.Config, store *monitor.AnnotationStore) http.Handler {
+	return &annotationsHandler{cfg: cfg, store: store}
 }
 
-// ServeHTTP routes GET/POST/DELETE on /api/annotations?job=<name>
 func (h *annotationsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	job := strings.TrimSpace(r.URL.Query().Get("job"))
+	job := r.URL.Query().Get("job")
 	if job == "" {
 		http.Error(w, "missing job parameter", http.StatusBadRequest)
 		return
 	}
-	if _, ok := h.knownJobs[job]; !ok {
+	if !h.jobExists(job) {
 		http.Error(w, "unknown job", http.StatusNotFound)
 		return
 	}
@@ -46,35 +42,33 @@ func (h *annotationsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *annotationsHandler) handleGet(w http.ResponseWriter, job string) {
-	a, ok := h.store.Get(job)
-	if !ok {
-		http.Error(w, "no annotation found", http.StatusNotFound)
-		return
-	}
+	annotations := h.store.Get(job)
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(a)
+	json.NewEncoder(w).Encode(annotations)
 }
 
 func (h *annotationsHandler) handlePost(w http.ResponseWriter, r *http.Request, job string) {
 	var body struct {
-		Note   string `json:"note"`
-		Author string `json:"author"`
+		Text string `json:"text"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Text == "" {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	if err := h.store.Set(job, body.Note, body.Author); err != nil {
-		http.Error(w, "failed to save annotation", http.StatusInternalServerError)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	h.store.Add(job, body.Text, time.Now())
+	w.WriteHeader(http.StatusOK)
 }
 
 func (h *annotationsHandler) handleDelete(w http.ResponseWriter, job string) {
-	if err := h.store.Delete(job); err != nil {
-		http.Error(w, "failed to delete annotation", http.StatusInternalServerError)
-		return
+	h.store.Clear(job)
+	w.WriteHeader(http.StatusOK)
+}
+
+func (h *annotationsHandler) jobExists(name string) bool {
+	for _, j := range h.cfg.Jobs {
+		if j.Name == name {
+			return true
+		}
 	}
-	w.WriteHeader(http.StatusNoContent)
+	return false
 }

@@ -4,67 +4,77 @@ import (
 	"encoding/json"
 	"os"
 	"sync"
+	"time"
 )
 
-// Annotation holds a user-defined note attached to a job.
 type Annotation struct {
-	JobName string `json:"job_name"`
-	Note    string `json:"note"`
-	Author  string `json:"author"`
+	Text      string    `json:"text"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
-// AnnotationStore persists per-job annotations.
 type AnnotationStore struct {
-	mu       sync.RWMutex
-	path     string
-	records  map[string]Annotation
+	mu   sync.Mutex
+	path string
+	data map[string][]Annotation
 }
 
-// NewAnnotationStore creates a store backed by the given file path.
-func NewAnnotationStore(path string) (*AnnotationStore, error) {
-	s := &AnnotationStore{path: path, records: make(map[string]Annotation)}
-	if err := s.load(); err != nil && !os.IsNotExist(err) {
-		return nil, err
-	}
-	return s, nil
+func NewAnnotationStore(path string) *AnnotationStore {
+	s := &AnnotationStore{path: path, data: make(map[string][]Annotation)}
+	s.load()
+	return s
 }
 
-// Set stores an annotation for a job, overwriting any existing one.
-func (s *AnnotationStore) Set(jobName, note, author string) error {
+func (s *AnnotationStore) Add(job, text string, at time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.records[jobName] = Annotation{JobName: jobName, Note: note, Author: author}
-	return s.save()
+	s.data[job] = append(s.data[job], Annotation{Text: text, CreatedAt: at})
+	s.save()
 }
 
-// Get returns the annotation for a job and whether it exists.
-func (s *AnnotationStore) Get(jobName string) (Annotation, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	a, ok := s.records[jobName]
-	return a, ok
-}
-
-// Delete removes the annotation for a job.
-func (s *AnnotationStore) Delete(jobName string) error {
+func (s *AnnotationStore) Get(job string) []Annotation {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.records, jobName)
-	return s.save()
+	if annotations, ok := s.data[job]; ok {
+		copy := make([]Annotation, len(annotations))
+		for i, a := range annotations {
+			copy[i] = a
+		}
+		return copy
+	}
+	return []Annotation{}
 }
 
-func (s *AnnotationStore) save() error {
-	data, err := json.MarshalIndent(s.records, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(s.path, data, 0o644)
+func (s *AnnotationStore) Clear(job string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.data, job)
+	s.save()
 }
 
-func (s *AnnotationStore) load() error {
-	data, err := os.ReadFile(s.path)
-	if err != nil {
-		return err
+func (s *AnnotationStore) All() map[string][]Annotation {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	result := make(map[string][]Annotation, len(s.data))
+	for k, v := range s.data {
+		result[k] = v
 	}
-	return json.Unmarshal(data, &s.records)
+	return result
+}
+
+func (s *AnnotationStore) load() {
+	f, err := os.Open(s.path)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	json.NewDecoder(f).Decode(&s.data)
+}
+
+func (s *AnnotationStore) save() {
+	f, err := os.Create(s.path)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	json.NewEncoder(f).Encode(s.data)
 }
