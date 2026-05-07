@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 )
@@ -47,7 +48,10 @@ func (w *WebhookNotifier) Send(a Alert) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("webhook: unexpected status %d", resp.StatusCode)
+		// Read up to 256 bytes of the response body to include in the error
+		// message, giving callers context about why the request was rejected.
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
+		return fmt.Errorf("webhook: unexpected status %d: %s", resp.StatusCode, bytes.TrimSpace(respBody))
 	}
 	return nil
 }
