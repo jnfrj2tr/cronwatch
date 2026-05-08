@@ -5,54 +5,51 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/cespare/cronwatch/internal/monitor"
+	"github.com/user/cronwatch/internal/monitor"
 )
 
 type runLogHandler struct {
-	runLog  *monitor.RunLog
+	runLog   *monitor.RunLog
 	knownJobs map[string]struct{}
 }
 
 func newRunLogHandler(rl *monitor.RunLog, jobs []string) *runLogHandler {
-	km := make(map[string]struct{}, len(jobs))
+	known := make(map[string]struct{}, len(jobs))
 	for _, j := range jobs {
-		km[j] = struct{}{}
+		known[j] = struct{}{}
 	}
-	return &runLogHandler{runLog: rl, knownJobs: km}
+	return &runLogHandler{runLog: rl, knownJobs: known}
 }
 
-// ServeHTTP handles GET /api/runlog?job=<name>&limit=<n>
 func (h *runLogHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	jobName := r.URL.Query().Get("job")
-	if jobName == "" {
+	job := r.URL.Query().Get("job")
+	if job == "" {
 		http.Error(w, "missing job parameter", http.StatusBadRequest)
 		return
 	}
 
-	if _, ok := h.knownJobs[jobName]; !ok {
+	if _, ok := h.knownJobs[job]; !ok {
 		http.Error(w, "unknown job", http.StatusNotFound)
 		return
 	}
 
-	limit := 10
-	if lStr := r.URL.Query().Get("limit"); lStr != "" {
-		n, err := strconv.Atoi(lStr)
-		if err != nil || n <= 0 {
+	limit := 20
+	if l := r.URL.Query().Get("limit"); l != "" {
+		parsed, err := strconv.Atoi(l)
+		if err != nil || parsed <= 0 {
 			http.Error(w, "invalid limit", http.StatusBadRequest)
 			return
 		}
-		limit = n
+		limit = parsed
 	}
 
-	results := h.runLog.Recent(jobName, limit)
+	entries := h.runLog.Recent(job, limit)
+
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"job":     jobName,
-		"results": results,
-	})
+	_ = json.NewEncoder(w).Encode(entries)
 }
