@@ -9,39 +9,30 @@ import (
 // RegisterRoutes wires all API handlers onto the given mux.
 func RegisterRoutes(
 	mux *http.ServeMux,
-	m *monitor.Monitor,
-	silences *monitor.SilenceStore,
+	h *Handler,
+	silenceStore *monitor.SilenceStore,
 	history *monitor.History,
 	metrics *monitor.MetricsStore,
+	runLog *monitor.RunLog,
+	retries *monitor.RetryStore,
 	tags *monitor.TagStore,
 	annotations *monitor.AnnotationStore,
 	deps *monitor.DependencyStore,
+	maintenance *monitor.MaintenanceStore,
 ) {
-	h := NewHandler(m)
-	mux.HandleFunc("/health", h.handleHealth)
-	mux.HandleFunc("/heartbeat", h.handleHeartbeat)
-	mux.HandleFunc("/status", h.handleStatus)
+	mux.HandleFunc("/health", h.HandleHealth)
+	mux.HandleFunc("/heartbeat", h.HandleHeartbeat)
+	mux.HandleFunc("/status", h.HandleStatus)
 
-	sh := &silenceHandler{silences: silences, monitor: m}
-	mux.HandleFunc("/silence", sh.handleSilence)
-	mux.HandleFunc("/unsilence", sh.handleUnsilence)
-
-	hh := &historyHandler{history: history, monitor: m}
-	mux.HandleFunc("/history", hh.handleHistory)
-
-	mh := newMetricsHandler(metrics, m)
-	mux.HandleFunc("/metrics", mh.handleMetrics)
-
-	eh := newMetricsExportHandler(metrics, m)
-	mux.HandleFunc("/metrics/export", eh.handleExport)
-
-	th := newTagsHandler(tags, m)
-	mux.HandleFunc("/tags", th.ServeHTTP)
-
-	ah := newAnnotationsHandler(annotations, m)
-	mux.HandleFunc("/annotations", ah.ServeHTTP)
-
-	dh := newDependenciesHandler(deps)
-	mux.HandleFunc("/dependencies", dh.ServeHTTP)
-	mux.HandleFunc("/dependencies/all", dh.handleAll)
+	mux.Handle("/silence", newSilenceHandler(silenceStore))
+	mux.Handle("/history", newHistoryHandler(history))
+	mux.Handle("/metrics", newMetricsHandler(metrics))
+	mux.Handle("/metrics/export", newMetricsExportHandler(metrics))
+	mux.Handle("/runlog", newRunLogHandler(runLog))
+	mux.Handle("/retries", newRetriesHandler(retries))
+	mux.Handle("/retries/all", newRetriesAllHandler(retries))
+	mux.Handle("/tags", newTagsHandler(tags))
+	mux.Handle("/annotations", newAnnotationsHandler(annotations))
+	mux.Handle("/dependencies", newDependenciesHandler(deps))
+	mux.Handle("/maintenance", newMaintenanceHandler(maintenance))
 }
